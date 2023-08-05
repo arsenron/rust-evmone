@@ -297,12 +297,12 @@ mod tests {
     fn test_code_hash() {
         unsafe {
             let mut ctx = TestContext::new();
-            ctx.code = crate::hex("0xfa1287d2");
+            ctx.code = hex("0xfa1287d2");
             let address = evmc_address { bytes: [0; 20] };
             let hash = get_code_hash::<TestContext>(ctx.as_ptr(), &address as *const _);
             assert_eq!(
                 hash.bytes,
-                crate::hex_to_bytearray(
+                hex_to_bytearray(
                     "3479ca1b1f9c881a81786a1e58f0c5cfade4d8f532e8bada85d02ccdd7e2bdb4"
                 )
             );

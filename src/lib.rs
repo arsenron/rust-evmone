@@ -675,75 +675,71 @@ pub mod test_utils {
             AccessStatus::Cold
         }
     }
-}
 
-#[cfg(test)]
-pub fn hex(hex_str: &str) -> Vec<u8> {
-    let hex_str = if let Some(stripped) = hex_str.strip_prefix("0x") {
-        stripped
-    } else {
-        hex_str
-    };
-    (0..hex_str.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).unwrap())
-        .collect()
-}
-
-/// If `C` > `hex_str` length, `hex_str` is filled from the right side,
-#[cfg(test)]
-pub const fn hex_to_bytearray<const C: usize>(hex_str: &str) -> [u8; C] {
-    if C == 0 {
-        panic!("Size cannot be zero")
-    };
-    let bytes = hex_str.as_bytes();
-    if !bytes.len() % 2 == 0 {
-        panic!("Hex string must be even")
-    }
-    // todo: use str::get() when stabilized in const expressions
-    let (hex_len, shift) = if bytes[0] == b'0' && bytes[1] == b'x' {
-        // Shift hex string 2 characters right if it starts with '0x'
-        ((bytes.len() - 2) / 2, 2)
-    } else {
-        (bytes.len() / 2, 0)
-    };
-    if C < hex_len {
-        panic!("Array size cannot be smaller than hex array")
-    }
-    let mut buf = [0u8; C];
-    let mut i = 0;
-    while i < hex_len {
-        buf[C - hex_len + i] =
-            decode_hex_byte([bytes[2 * i + shift], bytes[2 * i + 1 + shift]]);
-        i += 1
-    }
-    buf
-}
-
-#[cfg(test)]
-pub const fn decode_hex_byte(hex: [u8; 2]) -> u8 {
-    let mut out = 0u8;
-    let mut i = 0;
-    while i < 2 {
-        out <<= 4;
-        let byte = hex[i];
-        let nibble = match byte {
-            b'0'..=b'9' => byte - b'0',
-            b'a'..=b'f' => byte + 10 - b'a',
-            b'A'..=b'F' => byte + 10 - b'A',
-            _ => panic!("Invalid hex string received"),
+    pub fn hex(hex_str: &str) -> Vec<u8> {
+        let hex_str = if let Some(stripped) = hex_str.strip_prefix("0x") {
+            stripped
+        } else {
+            hex_str
         };
-        out |= nibble;
-        i += 1
+        (0..hex_str.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).unwrap())
+            .collect()
     }
-    out
+
+    /// If `C` > `hex_str` length, `hex_str` is filled from the right side,
+    pub const fn hex_to_bytearray<const C: usize>(hex_str: &str) -> [u8; C] {
+        if C == 0 {
+            panic!("Size cannot be zero")
+        };
+        let bytes = hex_str.as_bytes();
+        if !bytes.len() % 2 == 0 {
+            panic!("Hex string must be even")
+        }
+        // todo: use str::get() when stabilized in const expressions
+        let (hex_len, shift) = if bytes[0] == b'0' && bytes[1] == b'x' {
+            // Shift hex string 2 characters right if it starts with '0x'
+            ((bytes.len() - 2) / 2, 2)
+        } else {
+            (bytes.len() / 2, 0)
+        };
+        if C < hex_len {
+            panic!("Array size cannot be smaller than hex array")
+        }
+        let mut buf = [0u8; C];
+        let mut i = 0;
+        while i < hex_len {
+            buf[C - hex_len + i] =
+                decode_hex_byte([bytes[2 * i + shift], bytes[2 * i + 1 + shift]]);
+            i += 1
+        }
+        buf
+    }
+
+    pub const fn decode_hex_byte(hex: [u8; 2]) -> u8 {
+        let mut out = 0u8;
+        let mut i = 0;
+        while i < 2 {
+            out <<= 4;
+            let byte = hex[i];
+            let nibble = match byte {
+                b'0'..=b'9' => byte - b'0',
+                b'a'..=b'f' => byte + 10 - b'a',
+                b'A'..=b'F' => byte + 10 - b'A',
+                _ => panic!("Invalid hex string received"),
+            };
+            out |= nibble;
+            i += 1
+        }
+        out
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::*;
-    use super::hex;
 
     #[test]
     fn simple_opcodes() {
