@@ -1,0 +1,22 @@
+[package]
+name = "vm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+evmc-sys = { path = "./evmc-sys" }
+crypto-bigint = { workspace = true }
+sha3 = { workspace = true }
+rlp = { workspace = true }
+bytes = { workspace = true }
+common = { path = "../common" }
+tracing = { workspace = true }
+
+[build-dependencies]
+bindgen = "0.63.0"
+cmake = "0.1.49"
+
+#[profile.release]
+#panic = "abort"
