@@ -3,14 +3,29 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs")); // import `evmc_create_evmon
 mod callbacks;
 
 use bytes::Bytes;
-use common::structures::address::Address;
 use crypto_bigint::{Encoding, U256};
 use evmc_sys::*;
 use std::fmt::Debug;
 use std::ptr::NonNull;
 use std::slice;
 
+pub type Address = [u8; 20];
+
 pub type B32 = [u8; 32];
+
+trait FromPtr {
+    unsafe fn from_ptr(ptr: *const evmc_address) -> Self;
+}
+
+impl FromPtr for Address {
+    unsafe fn from_ptr(ptr: *const evmc_address) -> Self {
+        if ptr.is_null() {
+            panic!("Got null pointer from evmone!");
+        }
+
+        (*ptr).bytes
+    }
+}
 
 pub trait HostInterface: Sized {
     type Error: Debug;
@@ -93,8 +108,8 @@ pub trait HostInterface: Sized {
 }
 
 trait HostContextExt: HostInterface {
-    // todo: make from config in the future
-    const REVISION: Revision = Revision::Shanghai;
+    // todo: stub
+    const REVISION: Revision = Revision::Cancun;
 
     const EVMC_HOST_INTERFACE: evmc_host_interface = evmc_host_interface {
         account_exists: Some(callbacks::account_exists::<Self>),
@@ -417,7 +432,7 @@ impl From<EvmExecutionResult> for evmc_result {
             gas_refund: value.gas_refund,
             release: Some(release_result),
             create_address: evmc_address {
-                bytes: value.create_address.map(|addr| addr.0).unwrap_or_default(),
+                bytes: value.create_address.unwrap_or_default(),
             },
             padding: [0u8; 4],
         }
@@ -454,8 +469,12 @@ impl From<evmc_result> for EvmExecutionResult {
                 slice::from_raw_parts(evmc_result.output_data as *mut u8, evmc_result.output_size);
             copied_slice.to_vec()
         });
-        let address_bytes = &evmc_result.create_address.bytes;
-        let create_address = (address_bytes != &[0; 20]).then(|| Address::from(address_bytes));
+        let address_bytes = evmc_result.create_address.bytes;
+        let create_address = if address_bytes.is_empty() {
+            None
+        } else {
+            Some(address_bytes)
+        };
         // Return value back to origin allocator
         if let Some(release_fn) = evmc_result.release {
             // SAFETY: we did not consume any of heap allocated resources of the `evmc_result`
@@ -509,11 +528,9 @@ impl From<VmTxContext> for evmc_tx_context {
             tx_gas_price: evmc_uint256be {
                 bytes: ctx.gas_price.to_be_bytes(),
             },
-            tx_origin: evmc_address {
-                bytes: ctx.origin.0,
-            },
+            tx_origin: evmc_address { bytes: ctx.origin },
             block_coinbase: evmc_address {
-                bytes: ctx.block_coinbase.0,
+                bytes: ctx.block_coinbase,
             },
             block_number: ctx.block_number,
             block_timestamp: ctx.block_timestamp,
@@ -554,8 +571,6 @@ macro_rules! convert_between_enums {
     }
 }
 
-// todo: Make this more robust in future like using proc macros to compare all the discriminants.
-//  Something like assert_eq!(set(Enum1 discriminants), set(Enum2 discriminants))
 convert_between_enums!(
     StorageStatus = evmc_storage_status,
     CallKind = evmc_call_kind,
@@ -663,10 +678,72 @@ pub mod test_utils {
 }
 
 #[cfg(test)]
+pub fn hex(hex_str: &str) -> Vec<u8> {
+    let hex_str = if let Some(stripped) = hex_str.strip_prefix("0x") {
+        stripped
+    } else {
+        hex_str
+    };
+    (0..hex_str.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+/// If `C` > `hex_str` length, `hex_str` is filled from the right side,
+#[cfg(test)]
+pub const fn hex_to_bytearray<const C: usize>(hex_str: &str) -> [u8; C] {
+    if C == 0 {
+        panic!("Size cannot be zero")
+    };
+    let bytes = hex_str.as_bytes();
+    if !bytes.len() % 2 == 0 {
+        panic!("Hex string must be even")
+    }
+    // todo: use str::get() when stabilized in const expressions
+    let (hex_len, shift) = if bytes[0] == b'0' && bytes[1] == b'x' {
+        // Shift hex string 2 characters right if it starts with '0x'
+        ((bytes.len() - 2) / 2, 2)
+    } else {
+        (bytes.len() / 2, 0)
+    };
+    if C < hex_len {
+        panic!("Array size cannot be smaller than hex array")
+    }
+    let mut buf = [0u8; C];
+    let mut i = 0;
+    while i < hex_len {
+        buf[C - hex_len + i] =
+            decode_hex_byte([bytes[2 * i + shift], bytes[2 * i + 1 + shift]]);
+        i += 1
+    }
+    buf
+}
+
+#[cfg(test)]
+pub const fn decode_hex_byte(hex: [u8; 2]) -> u8 {
+    let mut out = 0u8;
+    let mut i = 0;
+    while i < 2 {
+        out <<= 4;
+        let byte = hex[i];
+        let nibble = match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte + 10 - b'a',
+            b'A'..=b'F' => byte + 10 - b'A',
+            _ => panic!("Invalid hex string received"),
+        };
+        out |= nibble;
+        i += 1
+    }
+    out
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_utils::*;
-    use common::hex;
+    use super::hex;
 
     #[test]
     fn simple_opcodes() {
@@ -717,7 +794,8 @@ mod tests {
     #[test]
     fn selfdestruct_opcode() {
         let mut ctx = TestContext::new();
-        let address = Address::from_hex("0xAA");
+        // hex_to_bytearray("0xAA");
+        let address = hex_to_bytearray("0xAA");
         ctx.state.insert(address, vec![1, 2, 3]);
         let mut evm = Evm::new();
         let res = evm.execute(
@@ -737,7 +815,7 @@ mod tests {
     #[test]
     fn test_output() {
         let mut ctx = TestContext::new();
-        let sender = Address::from_hex("0xffff");
+        let sender = hex_to_bytearray("0xffff");
         let mut evm = Evm::new();
         // Copies 13 bytes of code (0D) to memory starting at 0x00 from 12-th byte of the contract
         // and then returns these 13 bytes from 0x00 (0xF3) code.

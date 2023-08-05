@@ -1,12 +1,44 @@
 //! C callbacks that are expected by evmone
 
-use crate::{EvmExecutionResult, HostContextExt};
-use crate::{HostInterface, Message, B32};
-use common::structures::address::Address;
-use common::{keccak256, Logger, EMPTY_HASH};
+use crate::{Address, HostInterface, Message, B32};
+use crate::{EvmExecutionResult, FromPtr, HostContextExt};
 use crypto_bigint::{Encoding, U256};
 use evmc_sys::*;
+use sha3::{Digest, Keccak256};
+use std::fmt::Debug;
 use std::slice;
+
+/// Keccak of empty set
+pub const EMPTY_HASH: [u8; 32] = [
+    197, 210, 70, 1, 134, 247, 35, 60, 146, 126, 125, 178, 220, 199, 3, 192, 229, 0, 182, 83, 202,
+    130, 39, 59, 123, 250, 216, 4, 93, 133, 164, 112,
+];
+
+trait Logger: Sized {
+    fn log<S: AsRef<str>>(self, msg: impl Into<Option<S>>) -> Self;
+}
+
+impl<T, E> Logger for Result<T, E>
+where
+    E: Debug,
+{
+    fn log<S: AsRef<str>>(self, msg: impl Into<Option<S>>) -> Self {
+        if let Err(ref e) = self {
+            let maybe_msg = msg.into();
+            if let Some(s) = maybe_msg {
+                tracing::error!("{e:?} {:?}", s.as_ref());
+            } else {
+                tracing::error!("{e:?}");
+            }
+        }
+        self
+    }
+}
+
+fn keccak256<T: AsRef<[u8]>>(data: T) -> [u8; 32] {
+    // Cannot panic as Keccak256 is always 32 bytes long
+    Keccak256::digest(data).as_slice().try_into().unwrap()
+}
 
 pub unsafe extern "C" fn account_exists<H: HostInterface>(
     context: *mut evmc_host_context,
@@ -88,7 +120,7 @@ pub unsafe extern "C" fn get_code_hash<H: HostInterface>(
         return evmc_bytes32 { bytes: EMPTY_HASH };
     }
     evmc_bytes32 {
-        bytes: keccak256(code).0,
+        bytes: keccak256(code),
     }
 }
 
@@ -207,7 +239,6 @@ mod tests {
     use super::*;
     use crate::test_utils::*;
     use crate::B32;
-    use common::{hex, hex_to_bytearray};
     use std::alloc::{alloc, dealloc, Layout};
     use std::{ptr, slice};
 
@@ -258,7 +289,7 @@ mod tests {
             );
             assert!(ctx.data.is_empty());
             assert_eq!(ctx.topics, None);
-            dealloc(topics as *mut u8, layout);
+            dealloc(topics, layout);
         }
     }
 
@@ -266,12 +297,12 @@ mod tests {
     fn test_code_hash() {
         unsafe {
             let mut ctx = TestContext::new();
-            ctx.code = hex("0xfa1287d2");
+            ctx.code = crate::hex("0xfa1287d2");
             let address = evmc_address { bytes: [0; 20] };
             let hash = get_code_hash::<TestContext>(ctx.as_ptr(), &address as *const _);
             assert_eq!(
                 hash.bytes,
-                hex_to_bytearray(
+                crate::hex_to_bytearray(
                     "3479ca1b1f9c881a81786a1e58f0c5cfade4d8f532e8bada85d02ccdd7e2bdb4"
                 )
             );
@@ -315,7 +346,7 @@ mod tests {
             let ptr = alloc(layout);
             let bytes_copied = copy_code_lambda(BUFFER_SIZE * 2, ptr);
             assert_eq!(bytes_copied, 2);
-            assert_eq!(slice::from_raw_parts_mut(ptr, bytes_copied,), [6, 7]);
+            assert_eq!(slice::from_raw_parts_mut(ptr, bytes_copied), [6, 7]);
             dealloc(ptr, layout);
 
             let ptr = alloc(layout);

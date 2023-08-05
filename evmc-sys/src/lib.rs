@@ -13,6 +13,12 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 /// This is a void type given host context is an opaque pointer. Functions allow it to be a null ptr.
 pub type evmc_host_context = ::std::os::raw::c_void;
 
+impl From<[u8; 20]> for evmc_address {
+    fn from(value: [u8; 20]) -> Self {
+        Self { bytes: value }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::mem::size_of;
