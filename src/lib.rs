@@ -436,11 +436,11 @@ impl From<EvmExecutionResult> for evmc_result {
     }
 }
 
-unsafe extern "C" fn release_result(result_ptr: *const evmc_result) {
-    if result_ptr.is_null() {
+unsafe extern "C" fn release_result(ptr: *const evmc_result) {
+    if ptr.is_null() {
         return;
     }
-    let result = &*result_ptr;
+    let result = &*ptr;
     if !result.output_data.is_null() {
         // SAFETY: While creating evmc_result, we allocated output data on the heap
         // without using its destructor using `Box::into_raw` - so this is completely safe
