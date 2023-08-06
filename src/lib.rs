@@ -236,8 +236,8 @@ pub enum Revision {
     Berlin = 8,
     London = 9,
     Paris = 10,
-    Shanghai = 11,
     #[default]
+    Shanghai = 11,
     Cancun = 12,
 }
 
