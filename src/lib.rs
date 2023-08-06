@@ -108,9 +108,6 @@ pub trait HostInterface: Sized {
 }
 
 trait HostContextExt: HostInterface {
-    // todo: stub
-    const REVISION: Revision = Revision::Cancun;
-
     const EVMC_HOST_INTERFACE: evmc_host_interface = evmc_host_interface {
         account_exists: Some(callbacks::account_exists::<Self>),
         get_storage: Some(callbacks::get_storage::<Self>),
@@ -128,7 +125,6 @@ trait HostContextExt: HostInterface {
         access_storage: Some(callbacks::access_storage::<Self>),
     };
 
-    /// For internal usage
     fn cast<'a>(evmc_host_context: *mut evmc_host_context) -> &'a mut Self {
         // SAFETY: We assume that `evmc_host_context` coming from evm is never NULL
         unsafe { &mut (*evmc_host_context.cast()) }
@@ -145,9 +141,9 @@ impl Evm {
     pub fn new() -> Self {
         unsafe {
             // SAFETY: we are promised that we always get valid evmc_vm instance
-            let inner = evmc_create_evmone();
-            let inner = NonNull::new(inner).unwrap();
-            Self { inner }
+            Self {
+                inner: NonNull::new(evmc_create_evmone()).unwrap(),
+            }
         }
     }
 }
@@ -164,6 +160,7 @@ impl Evm {
         host: &mut H,
         message: Message,
         code: &[u8],
+        revision: Revision,
     ) -> EvmExecutionResult {
         let (code_ptr, code_size) = if code.is_empty() {
             (std::ptr::null(), 0)
@@ -177,7 +174,7 @@ impl Evm {
                 self.inner.as_ptr(),
                 &H::EVMC_HOST_INTERFACE,
                 host as *mut H as *mut evmc_host_context,
-                H::REVISION.into(),
+                revision.into(),
                 (&evmc_message) as *const _,
                 code_ptr,
                 code_size,
@@ -750,7 +747,7 @@ mod tests {
             gas_available: 100,
             ..Default::default()
         };
-        let res = evm.execute(&mut ctx, message, code.as_slice());
+        let res = evm.execute(&mut ctx, message, code.as_slice(), Default::default());
         assert_eq!(res.gas_left, 94) // See the "code" variable why we expect this
     }
 
@@ -802,6 +799,7 @@ mod tests {
                 ..Default::default()
             },
             hex("60AAFF").as_slice(),
+            Default::default(),
         );
         drop(evm);
         assert_eq!(res.status_code, StatusCode::Success);
@@ -826,7 +824,7 @@ mod tests {
             input_data: None,
             ..Default::default()
         };
-        let res = evm.execute(&mut ctx, message, code.as_slice());
+        let res = evm.execute(&mut ctx, message, code.as_slice(), Default::default());
         assert_eq!(res.status_code, StatusCode::Success);
         assert_eq!(
             res.output,
