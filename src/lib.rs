@@ -239,6 +239,7 @@ pub enum Revision {
     #[default]
     Shanghai = 11,
     Cancun = 12,
+    Prague = 13,
 }
 
 /// Message passed to evm
